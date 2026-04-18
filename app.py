@@ -4,6 +4,7 @@ from firebase_admin import credentials, firestore
 import pandas as pd
 import time
 import json
+import requests
 
 # ------------------ FIREBASE INIT ------------------
 if not firebase_admin._apps:
@@ -12,6 +13,16 @@ if not firebase_admin._apps:
     firebase_admin.initialize_app(cred)
 
 db = firestore.client()
+
+# ------------------ TELEGRAM ------------------
+def send_telegram(msg):
+    try:
+        token = st.secrets["general"]["telegram_token"]
+        chat_id = st.secrets["general"]["telegram_chat_id"]
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        requests.post(url, data={"chat_id": chat_id, "text": msg})
+    except:
+        pass
 
 # ------------------ FETCH TRADES ------------------
 def fetch_trades():
@@ -23,28 +34,36 @@ def fetch_trades():
     for doc in docs:
         d = doc.to_dict()
         data.append({
-            "id": doc.id,  # ✅ IMPORTANT (for delete)
+            "id": doc.id,
             "Symbol": d.get("symbol"),
             "Entry": d.get("entry"),
             "Target": d.get("target"),
             "StopLoss": d.get("stopLoss"),
             "Type": d.get("type"),
+            "Status": d.get("status", "RUNNING"),
             "Time": d.get("time")
         })
     
     return pd.DataFrame(data)
 
+# ------------------ P&L CALC ------------------
+def calculate_pnl(row):
+    if row["Status"] == "TARGET HIT":
+        return row["Target"] - row["Entry"] if row["Type"] == "BUY" else row["Entry"] - row["Target"]
+    elif row["Status"] == "SL HIT":
+        return row["StopLoss"] - row["Entry"] if row["Type"] == "BUY" else row["Entry"] - row["StopLoss"]
+    return 0
+
 # ------------------ UI ------------------
-st.title("📈 Live Trade Feed")
+st.title("📈 Pro Trade Panel")
 
-# ------------------ ADMIN LOGIN ------------------
-st.subheader("🔐 Admin Panel")
+# ------------------ LOGIN ------------------
+password = st.text_input("Admin Password", type="password")
 
-password = st.text_input("Enter Admin Password", type="password")
+is_admin = password == st.secrets["general"]["admin_password"]
 
-if password == st.secrets["general"]["admin_password"]:
-
-    st.success("Admin Access Granted ✅")
+if is_admin:
+    st.success("Admin Access ✅")
 
     # ------------------ ADD TRADE ------------------
     st.subheader("📤 Send Trade")
@@ -62,49 +81,62 @@ if password == st.secrets["general"]["admin_password"]:
             "target": target,
             "stopLoss": stoploss,
             "type": trade_type,
+            "status": "RUNNING",
             "time": firestore.SERVER_TIMESTAMP
         })
+
+        send_telegram(f"📢 NEW TRADE\n{trade_type} {symbol}\nEntry: {entry}\nTarget: {target}\nSL: {stoploss}")
         st.success("Trade Sent ✅")
         st.rerun()
 
-    # ------------------ DELETE TRADE ------------------
-    st.subheader("❌ Delete Trade")
-
-    df = fetch_trades()
-
-    if not df.empty:
-        # 🔥 Better UX label
-        df["label"] = (
-            df["Symbol"].astype(str)
-            + " | "
-            + df["Type"].astype(str)
-            + " | Entry: "
-            + df["Entry"].astype(str)
-        )
-
-        selected_label = st.selectbox("Select Trade", df["label"])
-
-        selected_id = df[df["label"] == selected_label]["id"].values[0]
-
-        if st.button("Delete Trade"):
-            db.collection("trades").document(selected_id).delete()
-            st.success("Trade Deleted ✅")
-            st.rerun()
-    else:
-        st.info("No trades to delete")
-
-elif password:
-    st.error("Wrong Password ❌")
-
-# ------------------ DISPLAY TRADES ------------------
-st.subheader("📊 Latest Trades")
+# ------------------ DISPLAY ------------------
+st.subheader("📊 Live Trades")
 
 df = fetch_trades()
 
 if not df.empty:
+
+    # P&L
+    df["PnL"] = df.apply(calculate_pnl, axis=1)
+
     st.dataframe(df.drop(columns=["id"]), use_container_width=True)
+
+    # ------------------ ADMIN ACTIONS ------------------
+    if is_admin:
+
+        st.subheader("✏️ Edit / Manage Trade")
+
+        df["label"] = df["Symbol"] + " | " + df["Type"] + " | Entry: " + df["Entry"].astype(str)
+
+        selected_label = st.selectbox("Select Trade", df["label"])
+        selected_row = df[df["label"] == selected_label].iloc[0]
+        selected_id = selected_row["id"]
+
+        new_target = st.number_input("New Target", value=float(selected_row["Target"]))
+        new_sl = st.number_input("New StopLoss", value=float(selected_row["StopLoss"]))
+        new_status = st.selectbox("Status", ["RUNNING", "TARGET HIT", "SL HIT"])
+
+        if st.button("Update Trade"):
+            db.collection("trades").document(selected_id).update({
+                "target": new_target,
+                "stopLoss": new_sl,
+                "status": new_status
+            })
+
+            send_telegram(f"✏️ UPDATE\n{selected_row['Symbol']}\nStatus: {new_status}")
+            st.success("Trade Updated ✅")
+            st.rerun()
+
+        # ------------------ DELETE ------------------
+        if st.button("Delete Trade"):
+            db.collection("trades").document(selected_id).delete()
+            send_telegram(f"❌ DELETED\n{selected_row['Symbol']}")
+            st.success("Deleted ✅")
+            st.rerun()
+
 else:
-    st.info("No trades yet")
+    if password:
+        st.error("Wrong Password ❌")
 
 # ------------------ AUTO REFRESH ------------------
 time.sleep(5)
