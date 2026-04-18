@@ -59,7 +59,6 @@ st.title("📈 Pro Trade Panel")
 
 # ------------------ LOGIN ------------------
 password = st.text_input("Admin Password", type="password")
-
 is_admin = password == st.secrets["general"]["admin_password"]
 
 if is_admin:
@@ -96,10 +95,17 @@ df = fetch_trades()
 
 if not df.empty:
 
-    # P&L
+    # PnL Calculation
     df["PnL"] = df.apply(calculate_pnl, axis=1)
 
-    st.dataframe(df.drop(columns=["id"]), use_container_width=True)
+    # 🔥 Remove Time + ID + Index
+    df_display = df.drop(columns=["id", "Time"], errors="ignore")
+
+    st.dataframe(
+        df_display,
+        use_container_width=True,
+        hide_index=True
+    )
 
     # ------------------ ADMIN ACTIONS ------------------
     if is_admin:
