@@ -2,16 +2,17 @@ import streamlit as st
 import firebase_admin
 from firebase_admin import credentials, firestore
 import pandas as pd
+from datetime import datetime
 import time
 
 # ------------------ FIREBASE INIT ------------------
 if not firebase_admin._apps:
-    cred = credentials.Certificate(dict(st.secrets["firebase"]))
+    cred = credentials.Certificate(st.secrets["firebase"])
     firebase_admin.initialize_app(cred)
 
 db = firestore.client()
 
-# ------------------ FETCH DATA ------------------
+# ------------------ FETCH TRADES ------------------
 def fetch_trades():
     docs = db.collection("trades").order_by("time", direction=firestore.Query.DESCENDING).stream()
     
@@ -32,16 +33,45 @@ def fetch_trades():
 # ------------------ UI ------------------
 st.title("📈 Live Trade Feed")
 
-placeholder = st.empty()
+# ------------------ ADMIN PANEL ------------------
+st.subheader("📤 Send Trade")
 
-while True:
-    df = fetch_trades()
-    
-    with placeholder.container():
-        st.subheader("Latest Trades")
-        if not df.empty:
-            st.dataframe(df, use_container_width=True)
-        else:
-            st.info("No trades yet")
+password = st.text_input("Admin Password", type="password")
 
-    time.sleep(5)
+if password:
+    if password == st.secrets["admin_password"]:
+        st.success("Admin Access Granted ✅")
+
+        symbol = st.text_input("Symbol")
+        entry = st.number_input("Entry")
+        target = st.number_input("Target")
+        stoploss = st.number_input("StopLoss")
+        trade_type = st.selectbox("Type", ["BUY", "SELL"])
+
+        if st.button("Send Trade"):
+            db.collection("trades").add({
+                "symbol": symbol,
+                "entry": entry,
+                "target": target,
+                "stopLoss": stoploss,
+                "type": trade_type,
+                "time": firestore.SERVER_TIMESTAMP
+            })
+            st.success("Trade Sent ✅")
+            st.experimental_rerun()
+    else:
+        st.error("Wrong Password ❌")
+
+# ------------------ DISPLAY TRADES ------------------
+st.subheader("📊 Latest Trades")
+
+df = fetch_trades()
+
+if not df.empty:
+    st.dataframe(df, use_container_width=True)
+else:
+    st.info("No trades yet")
+
+# ------------------ AUTO REFRESH ------------------
+time.sleep(5)
+st.experimental_rerun()
