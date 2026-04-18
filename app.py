@@ -2,19 +2,21 @@ import streamlit as st
 import firebase_admin
 from firebase_admin import credentials, firestore
 import pandas as pd
-from datetime import datetime
 import time
 
 # ------------------ FIREBASE INIT ------------------
 if not firebase_admin._apps:
-    cred = credentials.Certificate(st.secrets["firebase"])
+    firebase_dict = dict(st.secrets["firebase"])
+    cred = credentials.Certificate(firebase_dict)
     firebase_admin.initialize_app(cred)
 
 db = firestore.client()
 
 # ------------------ FETCH TRADES ------------------
 def fetch_trades():
-    docs = db.collection("trades").order_by("time", direction=firestore.Query.DESCENDING).stream()
+    docs = db.collection("trades") \
+             .order_by("time", direction=firestore.Query.DESCENDING) \
+             .stream()
     
     data = []
     for doc in docs:
@@ -58,7 +60,7 @@ if password:
                 "time": firestore.SERVER_TIMESTAMP
             })
             st.success("Trade Sent ✅")
-            st.experimental_rerun()
+            st.rerun()
     else:
         st.error("Wrong Password ❌")
 
@@ -74,4 +76,4 @@ else:
 
 # ------------------ AUTO REFRESH ------------------
 time.sleep(5)
-st.experimental_rerun()
+st.rerun()
