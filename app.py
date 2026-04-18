@@ -1,10 +1,13 @@
 import streamlit as st
+from streamlit_autorefresh import st_autorefresh
 import firebase_admin
 from firebase_admin import credentials, firestore
 import pandas as pd
-import time
 import json
 import requests
+
+# ------------------ AUTO REFRESH (SAFE) ------------------
+st_autorefresh(interval=10000, key="refresh")  # refresh every 10 sec
 
 # ------------------ FIREBASE INIT ------------------
 if not firebase_admin._apps:
@@ -25,9 +28,11 @@ def send_telegram(msg):
         pass
 
 # ------------------ FETCH TRADES ------------------
+@st.cache_data(ttl=10)
 def fetch_trades():
     docs = db.collection("trades") \
              .order_by("time", direction=firestore.Query.DESCENDING) \
+             .limit(20) \
              .stream()
     
     data = []
@@ -167,7 +172,3 @@ if is_admin and not df.empty:
         send_telegram(f"❌ DELETED\n{selected_row['Symbol']}")
         st.success("Deleted ✅")
         st.rerun()
-
-# ------------------ AUTO REFRESH ------------------
-time.sleep(5)
-st.rerun()
