@@ -1,2 +1,3 @@
 # trading-app
-trading ideas 
+trading ideas for app
+
