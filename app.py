@@ -5,12 +5,12 @@ from firebase_admin import credentials, firestore
 import pandas as pd
 import requests
 
-# ------------------ AUTO REFRESH ------------------
-st_autorefresh(interval=10000, key="refresh")  # 10 sec
+# ------------------ AUTO REFRESH (LESS FREQUENT) ------------------
+st_autorefresh(interval=30000, key="refresh")  # 30 sec
 
 # ------------------ FIREBASE INIT ------------------
 if not firebase_admin._apps:
-    firebase_dict = dict(st.secrets["firebase"])  # ✅ FIXED
+    firebase_dict = dict(st.secrets["firebase"])
     cred = credentials.Certificate(firebase_dict)
     firebase_admin.initialize_app(cred)
 
@@ -26,29 +26,34 @@ def send_telegram(msg):
     except:
         pass
 
-# ------------------ FETCH TRADES ------------------
-@st.cache_data(ttl=10)
+# ------------------ FETCH TRADES (SAFE) ------------------
+@st.cache_data(ttl=60)  # 🔥 BIG CHANGE (was 10)
 def fetch_trades():
-    docs = db.collection("trades") \
-             .order_by("time", direction=firestore.Query.DESCENDING) \
-             .limit(20) \
-             .stream()
-    
-    data = []
-    for doc in docs:
-        d = doc.to_dict()
-        data.append({
-            "id": doc.id,
-            "Symbol": d.get("symbol"),
-            "Entry": d.get("entry"),
-            "Target": d.get("target"),
-            "StopLoss": d.get("stopLoss"),
-            "Type": d.get("type"),
-            "Status": d.get("status", "RUNNING"),
-            "Time": d.get("time")
-        })
-    
-    return pd.DataFrame(data)
+    try:
+        docs = db.collection("trades") \
+                 .order_by("time", direction=firestore.Query.DESCENDING) \
+                 .limit(10) \
+                 .stream()
+
+        data = []
+        for doc in docs:
+            d = doc.to_dict()
+            data.append({
+                "id": doc.id,
+                "Symbol": d.get("symbol"),
+                "Entry": d.get("entry"),
+                "Target": d.get("target"),
+                "StopLoss": d.get("stopLoss"),
+                "Type": d.get("type"),
+                "Status": d.get("status", "RUNNING"),
+                "Time": d.get("time")
+            })
+
+        return pd.DataFrame(data)
+
+    except Exception as e:
+        st.warning("⚠️ Firestore limit reached. Showing cached/empty data.")
+        return pd.DataFrame()
 
 # ------------------ UI ------------------
 st.title("📈 Pro Trade Panel")
@@ -95,13 +100,9 @@ df = fetch_trades()
 if not df.empty:
     df_display = df.drop(columns=["id", "Time"], errors="ignore")
 
-    st.dataframe(
-        df_display,
-        use_container_width=True,
-        hide_index=True
-    )
+    st.dataframe(df_display, use_container_width=True, hide_index=True)
 else:
-    st.info("No trades yet")
+    st.info("No trades available")
 
 # ------------------ ANALYTICS ------------------
 st.subheader("📊 Performance Dashboard")
@@ -121,29 +122,13 @@ if not completed.empty:
     col3.metric("Losses", losses)
 
     st.metric("🟢 Win Rate (%)", f"{win_rate:.2f}%")
-
-    # ------------------ DAILY PERFORMANCE ------------------
-    st.subheader("📈 Daily Performance")
-
-    df_time = df.copy()
-    df_time["Time"] = pd.to_datetime(df_time["Time"], errors="coerce")
-    df_time["Date"] = df_time["Time"].dt.date
-
-    daily = df_time[df_time["Status"].isin(["TARGET HIT", "SL HIT"])]
-
-    if not daily.empty:
-        summary = daily.groupby(["Date", "Status"]).size().unstack(fill_value=0)
-        st.dataframe(summary, use_container_width=True)
-    else:
-        st.info("No completed trades for daily stats")
-
 else:
     st.info("No completed trades yet")
 
 # ------------------ ADMIN ACTIONS ------------------
 if is_admin and not df.empty:
 
-    st.subheader("✏️ Edit / Manage Trade")
+    st.subheader("✏️ Manage Trade")
 
     df["label"] = df["Symbol"] + " | " + df["Type"] + " | Entry: " + df["Entry"].astype(str)
 
@@ -163,7 +148,7 @@ if is_admin and not df.empty:
         })
 
         send_telegram(f"✏️ UPDATE\n{selected_row['Symbol']}\nStatus: {new_status}")
-        st.success("Trade Updated ✅")
+        st.success("Updated ✅")
         st.rerun()
 
     if st.button("Delete Trade"):
