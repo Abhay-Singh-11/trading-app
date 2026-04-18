@@ -3,10 +3,11 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 import pandas as pd
 import time
+import json
 
 # ------------------ FIREBASE INIT ------------------
 if not firebase_admin._apps:
-    firebase_dict = dict(st.secrets["firebase"])
+    firebase_dict = json.loads(json.dumps(st.secrets["firebase"]))
     cred = credentials.Certificate(firebase_dict)
     firebase_admin.initialize_app(cred)
 
@@ -41,7 +42,7 @@ st.subheader("📤 Send Trade")
 password = st.text_input("Admin Password", type="password")
 
 if password:
-    if password == st.secrets["admin_password"]:
+    if password == st.secrets["general"]["admin_password"]:
         st.success("Admin Access Granted ✅")
 
         symbol = st.text_input("Symbol")
