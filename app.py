@@ -3,15 +3,14 @@ from streamlit_autorefresh import st_autorefresh
 import firebase_admin
 from firebase_admin import credentials, firestore
 import pandas as pd
-import json
 import requests
 
-# ------------------ AUTO REFRESH (SAFE) ------------------
-st_autorefresh(interval=10000, key="refresh")  # refresh every 10 sec
+# ------------------ AUTO REFRESH ------------------
+st_autorefresh(interval=10000, key="refresh")  # 10 sec
 
 # ------------------ FIREBASE INIT ------------------
 if not firebase_admin._apps:
-    firebase_dict = json.loads(json.dumps(st.secrets["firebase"]))
+    firebase_dict = dict(st.secrets["firebase"])  # ✅ FIXED
     cred = credentials.Certificate(firebase_dict)
     firebase_admin.initialize_app(cred)
 
