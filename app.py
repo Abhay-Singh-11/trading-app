@@ -46,14 +46,6 @@ def fetch_trades():
     
     return pd.DataFrame(data)
 
-# ------------------ P&L CALC ------------------
-def calculate_pnl(row):
-    if row["Status"] == "TARGET HIT":
-        return row["Target"] - row["Entry"] if row["Type"] == "BUY" else row["Entry"] - row["Target"]
-    elif row["Status"] == "SL HIT":
-        return row["StopLoss"] - row["Entry"] if row["Type"] == "BUY" else row["Entry"] - row["StopLoss"]
-    return 0
-
 # ------------------ UI ------------------
 st.title("📈 Pro Trade Panel")
 
@@ -95,10 +87,7 @@ df = fetch_trades()
 
 if not df.empty:
 
-    # PnL Calculation
-    df["PnL"] = df.apply(calculate_pnl, axis=1)
-
-    # 🔥 Remove Time + ID + Index
+    # 🔥 Remove ID + Time
     df_display = df.drop(columns=["id", "Time"], errors="ignore")
 
     st.dataframe(
