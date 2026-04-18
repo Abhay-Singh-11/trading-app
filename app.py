@@ -80,14 +80,15 @@ if is_admin:
         st.success("Trade Sent ✅")
         st.rerun()
 
+elif password:
+    st.error("Wrong Password ❌")
+
 # ------------------ DISPLAY ------------------
 st.subheader("📊 Live Trades")
 
 df = fetch_trades()
 
 if not df.empty:
-
-    # 🔥 Remove ID + Time
     df_display = df.drop(columns=["id", "Time"], errors="ignore")
 
     st.dataframe(
@@ -95,43 +96,77 @@ if not df.empty:
         use_container_width=True,
         hide_index=True
     )
+else:
+    st.info("No trades yet")
 
-    # ------------------ ADMIN ACTIONS ------------------
-    if is_admin:
+# ------------------ ANALYTICS ------------------
+st.subheader("📊 Performance Dashboard")
 
-        st.subheader("✏️ Edit / Manage Trade")
+completed = df[df["Status"].isin(["TARGET HIT", "SL HIT"])]
 
-        df["label"] = df["Symbol"] + " | " + df["Type"] + " | Entry: " + df["Entry"].astype(str)
+if not completed.empty:
+    total_trades = len(completed)
+    wins = len(completed[completed["Status"] == "TARGET HIT"])
+    losses = len(completed[completed["Status"] == "SL HIT"])
 
-        selected_label = st.selectbox("Select Trade", df["label"])
-        selected_row = df[df["label"] == selected_label].iloc[0]
-        selected_id = selected_row["id"]
+    win_rate = (wins / total_trades) * 100
 
-        new_target = st.number_input("New Target", value=float(selected_row["Target"]))
-        new_sl = st.number_input("New StopLoss", value=float(selected_row["StopLoss"]))
-        new_status = st.selectbox("Status", ["RUNNING", "TARGET HIT", "SL HIT"])
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Total Trades", total_trades)
+    col2.metric("Wins", wins)
+    col3.metric("Losses", losses)
 
-        if st.button("Update Trade"):
-            db.collection("trades").document(selected_id).update({
-                "target": new_target,
-                "stopLoss": new_sl,
-                "status": new_status
-            })
+    st.metric("🟢 Win Rate (%)", f"{win_rate:.2f}%")
 
-            send_telegram(f"✏️ UPDATE\n{selected_row['Symbol']}\nStatus: {new_status}")
-            st.success("Trade Updated ✅")
-            st.rerun()
+    # ------------------ DAILY PERFORMANCE ------------------
+    st.subheader("📈 Daily Performance")
 
-        # ------------------ DELETE ------------------
-        if st.button("Delete Trade"):
-            db.collection("trades").document(selected_id).delete()
-            send_telegram(f"❌ DELETED\n{selected_row['Symbol']}")
-            st.success("Deleted ✅")
-            st.rerun()
+    df_time = df.copy()
+    df_time["Time"] = pd.to_datetime(df_time["Time"], errors="coerce")
+    df_time["Date"] = df_time["Time"].dt.date
+
+    daily = df_time[df_time["Status"].isin(["TARGET HIT", "SL HIT"])]
+
+    if not daily.empty:
+        summary = daily.groupby(["Date", "Status"]).size().unstack(fill_value=0)
+        st.dataframe(summary, use_container_width=True)
+    else:
+        st.info("No completed trades for daily stats")
 
 else:
-    if password:
-        st.error("Wrong Password ❌")
+    st.info("No completed trades yet")
+
+# ------------------ ADMIN ACTIONS ------------------
+if is_admin and not df.empty:
+
+    st.subheader("✏️ Edit / Manage Trade")
+
+    df["label"] = df["Symbol"] + " | " + df["Type"] + " | Entry: " + df["Entry"].astype(str)
+
+    selected_label = st.selectbox("Select Trade", df["label"])
+    selected_row = df[df["label"] == selected_label].iloc[0]
+    selected_id = selected_row["id"]
+
+    new_target = st.number_input("New Target", value=float(selected_row["Target"]))
+    new_sl = st.number_input("New StopLoss", value=float(selected_row["StopLoss"]))
+    new_status = st.selectbox("Status", ["RUNNING", "TARGET HIT", "SL HIT"])
+
+    if st.button("Update Trade"):
+        db.collection("trades").document(selected_id).update({
+            "target": new_target,
+            "stopLoss": new_sl,
+            "status": new_status
+        })
+
+        send_telegram(f"✏️ UPDATE\n{selected_row['Symbol']}\nStatus: {new_status}")
+        st.success("Trade Updated ✅")
+        st.rerun()
+
+    if st.button("Delete Trade"):
+        db.collection("trades").document(selected_id).delete()
+        send_telegram(f"❌ DELETED\n{selected_row['Symbol']}")
+        st.success("Deleted ✅")
+        st.rerun()
 
 # ------------------ AUTO REFRESH ------------------
 time.sleep(5)
