@@ -23,6 +23,7 @@ def fetch_trades():
     for doc in docs:
         d = doc.to_dict()
         data.append({
+            "id": doc.id,  # ✅ IMPORTANT (for delete)
             "Symbol": d.get("symbol"),
             "Entry": d.get("entry"),
             "Target": d.get("target"),
@@ -36,34 +37,64 @@ def fetch_trades():
 # ------------------ UI ------------------
 st.title("📈 Live Trade Feed")
 
-# ------------------ ADMIN PANEL ------------------
-st.subheader("📤 Send Trade")
+# ------------------ ADMIN LOGIN ------------------
+st.subheader("🔐 Admin Panel")
 
-password = st.text_input("Admin Password", type="password")
+password = st.text_input("Enter Admin Password", type="password")
 
-if password:
-    if password == st.secrets["general"]["admin_password"]:
-        st.success("Admin Access Granted ✅")
+if password == st.secrets["general"]["admin_password"]:
 
-        symbol = st.text_input("Symbol")
-        entry = st.number_input("Entry")
-        target = st.number_input("Target")
-        stoploss = st.number_input("StopLoss")
-        trade_type = st.selectbox("Type", ["BUY", "SELL"])
+    st.success("Admin Access Granted ✅")
 
-        if st.button("Send Trade"):
-            db.collection("trades").add({
-                "symbol": symbol,
-                "entry": entry,
-                "target": target,
-                "stopLoss": stoploss,
-                "type": trade_type,
-                "time": firestore.SERVER_TIMESTAMP
-            })
-            st.success("Trade Sent ✅")
+    # ------------------ ADD TRADE ------------------
+    st.subheader("📤 Send Trade")
+
+    symbol = st.text_input("Symbol")
+    entry = st.number_input("Entry")
+    target = st.number_input("Target")
+    stoploss = st.number_input("StopLoss")
+    trade_type = st.selectbox("Type", ["BUY", "SELL"])
+
+    if st.button("Send Trade"):
+        db.collection("trades").add({
+            "symbol": symbol,
+            "entry": entry,
+            "target": target,
+            "stopLoss": stoploss,
+            "type": trade_type,
+            "time": firestore.SERVER_TIMESTAMP
+        })
+        st.success("Trade Sent ✅")
+        st.rerun()
+
+    # ------------------ DELETE TRADE ------------------
+    st.subheader("❌ Delete Trade")
+
+    df = fetch_trades()
+
+    if not df.empty:
+        # 🔥 Better UX label
+        df["label"] = (
+            df["Symbol"].astype(str)
+            + " | "
+            + df["Type"].astype(str)
+            + " | Entry: "
+            + df["Entry"].astype(str)
+        )
+
+        selected_label = st.selectbox("Select Trade", df["label"])
+
+        selected_id = df[df["label"] == selected_label]["id"].values[0]
+
+        if st.button("Delete Trade"):
+            db.collection("trades").document(selected_id).delete()
+            st.success("Trade Deleted ✅")
             st.rerun()
     else:
-        st.error("Wrong Password ❌")
+        st.info("No trades to delete")
+
+elif password:
+    st.error("Wrong Password ❌")
 
 # ------------------ DISPLAY TRADES ------------------
 st.subheader("📊 Latest Trades")
@@ -71,7 +102,7 @@ st.subheader("📊 Latest Trades")
 df = fetch_trades()
 
 if not df.empty:
-    st.dataframe(df, use_container_width=True)
+    st.dataframe(df.drop(columns=["id"]), use_container_width=True)
 else:
     st.info("No trades yet")
 
